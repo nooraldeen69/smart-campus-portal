@@ -55,6 +55,9 @@ return [
     'campus' => [
         'cache_ttl'    => (int) env('CAMPUS_CACHE_TTL', 3600), // seconds
         'http_timeout' => (int) env('CAMPUS_HTTP_TIMEOUT', 2), // seconds (OBJ-2)
+        'force_https'  => env('FORCE_HTTPS'),                  // null = only in production
+        'demo_mode'    => (bool) env('DEMO_MODE', false),        // show demo accounts on the login page
+        'admin_password' => env('ADMIN_PASSWORD', 'password'),   // password of the seeded ADMIN001 account
     ],
 
 ];

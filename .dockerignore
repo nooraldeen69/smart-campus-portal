@@ -1,0 +1,17 @@
+.git
+.gitignore
+.env
+.env.*
+vendor
+node_modules
+storage/logs/*
+storage/framework/views/*
+storage/framework/sessions/*
+storage/framework/cache/data/*
+bootstrap/cache/*.php
+database/*.sqlite
+tests
+*.bat
+allow-firewall.bat
+.phpunit.result.cache
+Smart_Campus_Portal_ITPM_Nooraldeen.pdf

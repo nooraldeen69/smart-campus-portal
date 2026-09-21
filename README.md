@@ -1,79 +1,89 @@
-# Smart Campus Portal - Laravel implementation
+# Smart Campus Portal
 
-Code for the ITPM dossier *Smart Campus Portal* (Al-Rasheed Smart University).
-This is the **application layer** for a fresh Laravel 11/12 project (PHP 8.2+): copy it over a new install.
-It includes everything from your snippets (routes, API gateway service, dashboard controller, dashboard view)
-plus the pieces they depend on: SSO client, models, migrations, layouts, notifications, background sync,
-a mock university back-end, and tests mapped to your Acceptance Tests.
+Laravel 11 implementation of the ITPM dossier (integrated SIS + LMS + Library dashboard, mobile-first UI).
+It runs as-is: `vendor/` is included, the database is created automatically, and default seed data is provided.
 
-## 1. Install
+## Run it - and open it from any device on the network
 
-```bash
-composer create-project laravel/laravel smart-campus-portal
-cd smart-campus-portal
+**Windows:** double-click **`start-portal.bat`**
+**macOS / Linux:** `./start-portal.sh`
+(or, in any terminal: `php artisan portal:serve`)
 
-# copy this folder's contents over the new project (overwrite when asked):
-#   app/  bootstrap/app.php  config/services.php  database/migrations/  resources/views/
-#   routes/  tests/  mock-server/
-# then add the settings from .env.additions to your .env (see the note at the top of that file)
+It prints something like:
 
-php artisan migrate
+```
+  On this computer   :  http://localhost:8000
+  On the network     :  http://192.168.1.23:8000   <- share this one
 ```
 
-## 2. Run locally (3 terminals)
+Open the *network* address on a phone or another PC on the same Wi-Fi/LAN, click **Sign in with University ID**,
+and choose **Layla Hassan (20260001)** or **Omar Khalid (20260002)**. Stop everything with `Ctrl+C`.
+
+**If another device cannot connect** (Windows): right-click **`allow-firewall.bat` -> Run as administrator**
+(opens ports 8000 and 8001 for Private/Domain networks). Also make sure your Wi-Fi is set to a *Private*
+network in Windows settings. Ports used: **8000** = portal, **8001** = mock university back-end.
+
+Requirements: PHP 8.2+ with the `curl`, `mbstring`, `openssl`, `pdo_sqlite`, `sqlite3`, `fileinfo` extensions (all on by default in XAMPP/Laragon; enable
+`extension=pdo_sqlite` / `sqlite3` in `php.ini` if missing). No Composer, Node or internet is needed to run it.
+
+> If a folder path with Arabic characters ever causes odd errors, copy the project to a plain path such as `C:\smart-campus-portal`.
+
+## What `portal:serve` does
+
+1. creates/migrates the SQLite database,
+2. starts the mock university back-end on port 8001 (`mock-server/router.php`),
+3. starts a queue worker + scheduler (grade sync every 30 min with automatic retry, notifications),
+4. serves the portal on `0.0.0.0:8000` (all network interfaces).
+
+Options: `--port=8080`, `--mock-port=9001`, `--no-mock` (use a real IdP/SIS/LMS/Library configured in `.env`), `--no-worker`.
+
+Logs: `storage/logs/laravel.log`, `mock-server.log`, `queue-worker.log`, `scheduler.log`.
+
+## Other commands
 
 ```bash
-# 1) Mock university back-end (IdP + SIS + LMS + Library) - plain PHP, port 8001
-php -S 127.0.0.1:8001 mock-server/router.php
-
-# 2) The portal
-php artisan serve                      # open http://localhost:8000  (use "localhost", not 127.0.0.1)
-
-# 3) Optional: background grade sync + notifications
-php artisan queue:work
-php artisan schedule:work
+php artisan portal:announce "Registration opens" "Monday 9am"   # notification to all users
+php artisan portal:sync-grades                                   # queue a grade refresh now
+php vendor/bin/phpunit                                           # 26 tests (no Mockery/Faker needed)
+MOCK_SIS_DELAY_MS=3000 php artisan portal:serve                  # slow legacy SIS demo (Windows cmd: set MOCK_SIS_DELAY_MS=3000 first)
 ```
 
-Sign in as **Layla Hassan (20260001)** or **Omar Khalid (20260002)** on the mock SSO page.
-Slow-SIS demo: `MOCK_SIS_DELAY_MS=2500 php -S 127.0.0.1:8001 mock-server/router.php` -> the dashboard
-still loads (2 s timeout) and shows a "temporarily unavailable" notice.
+## How network access works (no IP addresses to configure)
 
-Other commands:
-```bash
-php artisan portal:announce "Registration opens" "Monday 9am"   # in-portal notification to all users
-php artisan portal:sync-grades                                   # queue a grade refresh for all users
-php artisan test                                                 # run the test suite
-```
+* Links and the SSO callback URL are built from the address each visitor typed, so `localhost` and `192.168.x.x` both work at the same time.
+* `.env` uses `{host}` in `SSO_AUTHORIZE_URL` / `SSO_LOGOUT_URL`, replaced by that same address, so the phone is sent to the login page on the right machine. Server-to-server calls (token, SIS, LMS, Library) stay on `127.0.0.1`.
+* Bootstrap CSS/icons are self-hosted in `public/vendor`, so the pages look right on a network with no internet.
+* Plain `http` is allowed on the LAN (`FORCE_HTTPS=false`). Set `FORCE_HTTPS=true` when you deploy behind HTTPS.
 
-## 3. Dossier -> code traceability
+## Using a real university login instead of the mock
 
-| Dossier item | Where it lives |
+Set in `.env`: `SSO_CLIENT_ID`, `SSO_CLIENT_SECRET`, `SSO_AUTHORIZE_URL`, `SSO_TOKEN_URL`, `SSO_USERINFO_URL`, optional `SSO_LOGOUT_URL`,
+and `SSO_REDIRECT_URI` (the fixed callback URL registered with the IdP). Point `SIS_API_ENDPOINT`, `LMS_API_ENDPOINT`, `LIBRARY_API_ENDPOINT`
+at the real systems, then run `php artisan portal:serve --no-mock`. Claim names (`university_id`/`sub`, `name`, `email`) are read in `app/Services/SsoClient.php`.
+
+## Dossier -> code
+
+| Dossier item | Where |
 |---|---|
-| OBJ-1 / REQ-01 / AT-01 / QM05 - SSO via University ID (WBS 1.2.1) | `Services/SsoClient.php`, `Http/Controllers/Auth/SSOController.php`, `tests/Feature/SsoLoginTest.php` |
-| REQ-02 / AT-02 - grades from SIS (WBS 1.3.2) | `Services/CampusApiService.php`, `DashboardController.php`, `DashboardTest.php` |
-| OBJ-2 / REQ-03 / QM01 / AT-03 - load < 2 s | cache in `CampusApiService`, 2 s HTTP timeout, `Middleware/ServerTiming.php` (`Server-Timing` header + slow-request log) |
-| OBJ-4 / QM03 / AT-05 - uptime | `/up` health endpoint (point Uptime Kuma at it), stale-data fallback in `CampusApiService` |
-| QM04 / AC03 / AT-06 - mobile-first | `resources/views/layouts/app.blade.php` (viewport meta), Bootstrap grid in `portal/dashboard.blade.php` |
-| QM02 / AC04 / AT-04 / RSK02 - security | PKCE + `state` check, session regeneration, POST-only logout, `Middleware/SecurityHeaders.php` (HTTPS redirect in production, HSTS, nosniff, frame-deny), login throttling, encrypted sessions, `SecurityTest.php` |
-| RSK01 - undocumented legacy API | isolated in `CampusApiService`; failures handled, never cached; mock server for PoC work |
-| RSK05 - delayed grade sync | `Jobs/SyncStudentGradesJob.php` (5 tries, back-off 30s -> 5min), `Console/Commands/SyncGradesCommand.php`, scheduled in `routes/console.php` |
-| In-scope "Notifications" | `Notifications/AnnouncementNotification.php`, `AnnounceCommand.php`, dashboard card |
-| OBJ-3 - 60% fewer password-reset tickets | outcome of SSO; measured from helpdesk logs (AC05), not by code |
+| OBJ-1 / REQ-01 / AT-01 - SSO | `app/Services/SsoClient.php`, `Http/Controllers/Auth/SSOController.php` |
+| REQ-02 / AT-02 - grades from SIS | `app/Services/CampusApiService.php`, `DashboardController.php` |
+| OBJ-2 / REQ-03 / AT-03 - load < 2 s | caching + 2 s timeout in `CampusApiService`, `Middleware/ServerTiming.php` (`Server-Timing` header) |
+| OBJ-4 / AT-05 - uptime | `/up` health endpoint, stale-data fallback |
+| AC03 / AT-06 - mobile-first | `resources/views/layouts/app.blade.php`, `portal/dashboard.blade.php` |
+| RSK-02 / AT-04 - security | PKCE + state, POST-only logout, `Middleware/SecurityHeaders.php`, encrypted sessions |
+| RSK-05 - delayed grade sync | `Jobs/SyncStudentGradesJob.php` (5 tries, back-off), scheduled in `routes/console.php` |
+| Notifications | `Notifications/AnnouncementNotification.php`, `portal:announce` |
 
-## 4. Changes from the snippets you pasted (and why)
+## What was fixed compared with the previous version
 
-1. **Logout is `POST` + CSRF** instead of a GET link - a GET logout can be triggered by any page/image on the web.
-2. **Failures are no longer cached.** `Cache::remember` would store `[]` for an hour when the SIS timed out. Now only successful responses are cached; a 24 h "stale" copy is served if a back-end is down, and the dashboard shows a warning.
-3. **HTTP timeouts don't crash the page** (`ConnectionException` is caught).
-4. **Library module added** - OBJ-1 / QM05 name three systems (SIS, LMS, Library) but the snippets only covered two.
-5. **LMS links are checked** - only `http(s)` links are rendered (blocks `javascript:` URLs from an external system).
-6. **Controller comment said "concurrently"** but the calls were sequential; the comment is dropped. With caching this is fine for the target load; `Http::pool()` is the upgrade if needed.
-7. `/` uses `Route::view` so `php artisan route:cache` works in production.
+* Added the pieces the project skeleton was missing: `storage/` sub-folders (the first errors in your log were exactly this), the `jobs` table migration
+  (the grade-sync queue crashed without it), `phpunit.xml`, `tests/TestCase.php`, `config/*.php`, `.env.example`, `.gitignore`.
+* `artisan` started with a hidden BOM character; `public/index.php` replaced with the standard Laravel 11 one.
+* `.env` was hard-wired to `localhost` / `127.0.0.1`, so nothing but the same PC could log in. Now network-aware (see above).
+* The tests could not run (they needed Faker and Mockery, which are not in `vendor/`). They no longer do.
+* The mock login page and the layout no longer load anything from a CDN.
+* `portal:serve`, `start-portal.bat`, `start-portal.sh`, `allow-firewall.bat` added for one-step start-up.
 
-## 5. Not included / to decide
+## Hosting on the internet
 
-- **ID-token verification**: the portal calls the IdP's `userinfo` endpoint over TLS instead of validating a JWT signature. If your university IdP is OIDC, consider validating the ID token (JWKS) too. The claim names (`university_id`, `sub`, `name`, `email`) are assumptions - adjust in `SsoClient::fetchProfile()`.
-- **Roles**: the dashboard is student-oriented; faculty views would need a role claim + policies.
-- **Bootstrap is loaded from a CDN** for simplicity - self-host or add SRI hashes for production.
-- **The `mock-server/` is for demos only** - never deploy it.
-- I could not run PHP/Composer in my sandbox: every PHP file was syntax-checked with a parser, but the tests and app have **not** been executed against a live Laravel install. Run `php artisan test` first and send me any failures.
+See **[DEPLOY.md](DEPLOY.md)** - one-click deploy to Render (free) using the included `Dockerfile` + `render.yaml`, or a temporary tunnel from your PC.

@@ -22,6 +22,17 @@ return Application::configure(basePath: dirname(__DIR__))
             SecurityHeaders::class,
         ]);
 
+        // Register named middleware aliases
+        // Behind a hosting platform's HTTPS proxy (Render, Railway, Fly, ...) set TRUSTED_PROXIES=*
+        // so Laravel knows the original request was https (secure cookies, correct links, HSTS).
+        if ($proxies = env('TRUSTED_PROXIES')) {
+            $middleware->trustProxies(at: $proxies === '*' ? '*' : array_map('trim', explode(',', $proxies)));
+        }
+
+        $middleware->alias([
+            'admin' => \App\Http\Middleware\IsAdmin::class,
+        ]);
+
         // If the app runs behind a cloud load balancer (multi-AZ, RSK-04),
         // uncomment so Laravel sees the original HTTPS scheme:
         // $middleware->trustProxies(at: '*');
